@@ -29,6 +29,11 @@ public class LiveActivity extends Activity {
 
         // Starts the RTSP server
         this.startService(new Intent(this, BackgroundCameraService.class));
+    }
 
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        this.stopService(new Intent(this, BackgroundCameraService.class));
     }
 }
