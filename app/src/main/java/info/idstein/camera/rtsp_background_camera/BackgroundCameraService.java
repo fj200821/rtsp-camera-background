@@ -1,13 +1,15 @@
 package info.idstein.camera.rtsp_background_camera;
 
+import android.annotation.SuppressLint;
 import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.app.PendingIntent;
-import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.graphics.PixelFormat;
-import android.os.IBinder;
-import android.support.annotation.Nullable;
+import android.os.Build;
+import android.support.annotation.RequiresApi;
 import android.view.LayoutInflater;
 import android.view.SurfaceHolder;
 import android.view.WindowManager;
@@ -16,6 +18,7 @@ import android.widget.RelativeLayout;
 import net.majorkernelpanic.streaming.SessionBuilder;
 import net.majorkernelpanic.streaming.gl.SurfaceView;
 import net.majorkernelpanic.streaming.rtsp.RtspServer;
+import net.majorkernelpanic.streaming.video.VideoQuality;
 
 public class BackgroundCameraService extends RtspServer {
     private static final int NOTIFICATION_ID = 42;
@@ -26,15 +29,18 @@ public class BackgroundCameraService extends RtspServer {
         SurfaceView sv;
         WindowManager wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
         LayoutInflater inflater = (LayoutInflater) getSystemService(LAYOUT_INFLATER_SERVICE);
-        RelativeLayout layout = (RelativeLayout) inflater.inflate(R.layout.live_activity, null);
+        assert inflater != null;
+        @SuppressLint("InflateParams") RelativeLayout layout = (RelativeLayout) inflater.inflate(R.layout.live_activity, null);
+
         WindowManager.LayoutParams params = new WindowManager.LayoutParams(1, 1,
-                WindowManager.LayoutParams.TYPE_SYSTEM_OVERLAY,
-                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_TOAST,
+                WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                 PixelFormat.TRANSLUCENT);
 
+        assert wm != null;
         wm.addView(layout, params);
 
-        sv = (SurfaceView) layout.findViewById(R.id.surface);
+        sv = layout.findViewById(R.id.surface);
         SurfaceHolder sh = sv.getHolder();
         sv.setZOrderOnTop(true);
         sh.setFormat(PixelFormat.TRANSPARENT);
@@ -42,22 +48,43 @@ public class BackgroundCameraService extends RtspServer {
         // Configures the SessionBuilder
         SessionBuilder.getInstance()
                 .setSurfaceView(sv)
-                .setPreviewOrientation(90)
                 .setContext(getApplicationContext())
+                .setVideoQuality(new VideoQuality(1920, 1080, 30, 20000))
+                .setVideoEncoder(SessionBuilder.VIDEO_H264)
+                .setAudioEncoder(SessionBuilder.AUDIO_AAC)
+                .setPreviewOrientation(90)
+                /*.setPreviewOrientation(90)
                 .setAudioEncoder(SessionBuilder.AUDIO_NONE)
-                .setVideoEncoder(SessionBuilder.VIDEO_H264);
+                .setVideoEncoder(SessionBuilder.VIDEO_H264)*/;
 
         runAsForeground();
     }
 
+    @RequiresApi(Build.VERSION_CODES.O)
+    private String createNotificationChannel() {
+        NotificationChannel chan = new NotificationChannel("my_service",
+                "My Background Service", NotificationManager.IMPORTANCE_NONE);
+        NotificationManager service = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        assert service != null;
+        service.createNotificationChannel(chan);
+        return "my_service";
+    }
+
     private void runAsForeground() {
-        Intent notificationIntent = new Intent(this, RtspSettingsActivity.class);
+        Intent notificationIntent = new Intent(this, LiveActivity.class);
         PendingIntent pendingIntent = PendingIntent.getActivity(this, 0,
                 notificationIntent, PendingIntent.FLAG_UPDATE_CURRENT);
 
-        Notification notification = new Notification.Builder(this)
+        final Notification.Builder builder;
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            builder = new Notification.Builder(this, createNotificationChannel());
+        } else {
+            builder = new Notification.Builder(this);
+        }
+        Notification notification = builder
+                .setOngoing(true)
                 .setSmallIcon(R.drawable.ic_launcher_foreground)
-                .setContentText("Background recording")
+                .setCategory(Notification.CATEGORY_SERVICE)
                 .setContentIntent(pendingIntent).build();
 
         startForeground(NOTIFICATION_ID, notification);
